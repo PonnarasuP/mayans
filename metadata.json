@@ -1,0 +1,6 @@
+{
+  "name": "Mayan Welfare",
+  "description": "Monthly contribution and welfare fund tracker with UPI payments, cash verification, and member transparency reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
