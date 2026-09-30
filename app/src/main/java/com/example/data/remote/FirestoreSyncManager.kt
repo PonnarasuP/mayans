@@ -8,8 +8,10 @@ import com.example.data.model.AuditLog
 import com.example.data.model.Contribution
 import com.example.data.model.Member
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -27,7 +29,8 @@ enum class CloudSyncState {
     SYNCING,
     SYNCED,
     OFFLINE_CACHE,
-    SETUP_REQUIRED
+    SETUP_REQUIRED,
+    PERMISSION_REQUIRED
 }
 
 class FirestoreSyncManager(
@@ -74,6 +77,22 @@ class FirestoreSyncManager(
             }
 
             if (app != null) {
+                // Attempt anonymous auth if enabled in Firebase Console (satisfies request.auth != null)
+                try {
+                    val auth = FirebaseAuth.getInstance(app)
+                    if (auth.currentUser == null) {
+                        auth.signInAnonymously()
+                            .addOnSuccessListener {
+                                Log.d(TAG, "Authenticated anonymously with Firebase: ${it.user?.uid}")
+                            }
+                            .addOnFailureListener { e ->
+                                Log.d(TAG, "Anonymous auth not enabled in Firebase Console: ${e.message}")
+                            }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "FirebaseAuth initialization note: ${e.message}")
+                }
+
                 val fs = FirebaseFirestore.getInstance(app)
                 val settings = FirebaseFirestoreSettings.Builder()
                     .setPersistenceEnabled(true)
@@ -93,6 +112,27 @@ class FirestoreSyncManager(
         }
     }
 
+    private fun handleListenerError(error: FirebaseFirestoreException?, collectionName: String) {
+        if (error == null) return
+        val isPermissionDenied = error.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+                error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+
+        if (isPermissionDenied) {
+            Log.w(
+                TAG,
+                "$collectionName listener: Firestore PERMISSION_DENIED. Firebase Console Security Rules require read/write access. Falling back safely to local Room SQLite database."
+            )
+            _syncState.value = CloudSyncState.PERMISSION_REQUIRED
+            _statusMessage.value = "Firestore Rules require permissions in Firebase Console. Local offline database active."
+            // Stop listeners to prevent repeated permission errors
+            stopRealtimeSync()
+        } else {
+            Log.w(TAG, "$collectionName listener warning: ${error.message}")
+            _syncState.value = CloudSyncState.OFFLINE_CACHE
+            _statusMessage.value = "Cloud offline (${error.code}). Local database active."
+        }
+    }
+
     fun startRealtimeSync(scope: CoroutineScope) {
         val fs = firestore
         if (fs == null) {
@@ -108,9 +148,7 @@ class FirestoreSyncManager(
             val membersReg = fs.collection("members")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
-                        Log.e(TAG, "Members listener error: ${error.message}")
-                        _syncState.value = CloudSyncState.OFFLINE_CACHE
-                        _statusMessage.value = "Cloud disconnected, using local cache"
+                        handleListenerError(error, "Members")
                         return@addSnapshotListener
                     }
 
@@ -125,7 +163,7 @@ class FirestoreSyncManager(
                                     _statusMessage.value = "Synchronized ${members.size} members from Cloud"
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to merge cloud members: ${e.message}")
+                                Log.w(TAG, "Failed to merge cloud members: ${e.message}")
                             }
                         }
                     }
@@ -136,7 +174,7 @@ class FirestoreSyncManager(
             val contribsReg = fs.collection("contributions")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
-                        Log.e(TAG, "Contributions listener error: ${error.message}")
+                        handleListenerError(error, "Contributions")
                         return@addSnapshotListener
                     }
 
@@ -151,7 +189,7 @@ class FirestoreSyncManager(
                                     _statusMessage.value = "Synchronized ${contributions.size} contributions from Cloud"
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to merge cloud contributions: ${e.message}")
+                                Log.w(TAG, "Failed to merge cloud contributions: ${e.message}")
                             }
                         }
                     }
@@ -162,7 +200,7 @@ class FirestoreSyncManager(
             val configReg = fs.collection("app_config").document("settings")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
-                        Log.e(TAG, "Config listener error: ${error.message}")
+                        handleListenerError(error, "Config")
                         return@addSnapshotListener
                     }
 
@@ -174,7 +212,7 @@ class FirestoreSyncManager(
                                     configDao.insertOrUpdate(cloudConfig)
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to merge cloud config: ${e.message}")
+                                Log.w(TAG, "Failed to merge cloud config: ${e.message}")
                             }
                         }
                     }
@@ -186,7 +224,7 @@ class FirestoreSyncManager(
                 .limit(50)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
-                        Log.e(TAG, "Audit logs listener error: ${error.message}")
+                        handleListenerError(error, "Audit logs")
                         return@addSnapshotListener
                     }
 
@@ -198,19 +236,51 @@ class FirestoreSyncManager(
                                     auditLogDao.insertLogs(logs)
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to merge cloud audit logs: ${e.message}")
+                                Log.w(TAG, "Failed to merge cloud audit logs: ${e.message}")
                             }
                         }
                     }
                 }
-            listenerRegistrations.add(logsReg)
+            // 5. Payment Reminders Listener (Cross-device push notifications, member only sees their own)
+            val syncStartTime = System.currentTimeMillis() - (60 * 1000)
+            val remindersReg = fs.collection("payment_reminders")
+                .whereGreaterThan("timestamp", syncStartTime)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Reminders listener error: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null && !snapshot.isEmpty) {
+                        for (change in snapshot.documentChanges) {
+                            if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                                val doc = change.document
+                                val targetMemberId = doc.getLong("memberId")
+                                val targetMemberName = doc.getString("memberName") ?: "Member"
+                                val monthYear = doc.getString("monthYear") ?: ""
+                                val amount = doc.getDouble("amount") ?: 0.0
+
+                                if (com.example.util.NotificationHelper.shouldShowNotificationForMember(context, targetMemberId, targetMemberName)) {
+                                    com.example.util.NotificationHelper.sendContributionReminderNotification(
+                                        context = context,
+                                        memberName = targetMemberName,
+                                        monthYear = monthYear,
+                                        amount = amount,
+                                        targetMemberId = targetMemberId,
+                                        notificationId = com.example.util.NotificationHelper.NOTIFICATION_ID_BASE + (targetMemberId?.toInt() ?: 1)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            listenerRegistrations.add(remindersReg)
 
             _isRealtimeActive.value = true
             _syncState.value = CloudSyncState.CONNECTED
             _statusMessage.value = "Realtime Central Database Active"
             Log.d(TAG, "Realtime Firestore sync listeners registered successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start realtime sync: ${e.message}", e)
+            Log.w(TAG, "Failed to start realtime sync: ${e.message}")
             _isRealtimeActive.value = false
         }
     }
@@ -342,6 +412,31 @@ class FirestoreSyncManager(
         }
     }
 
+    suspend fun pushPaymentReminder(
+        memberId: Long,
+        memberName: String,
+        monthYear: String,
+        amount: Double
+    ) {
+        val fs = firestore ?: return
+        withContext(Dispatchers.IO) {
+            try {
+                val data = hashMapOf(
+                    "id" to java.util.UUID.randomUUID().toString(),
+                    "memberId" to memberId,
+                    "memberName" to memberName,
+                    "monthYear" to monthYear,
+                    "amount" to amount,
+                    "timestamp" to System.currentTimeMillis()
+                )
+                fs.collection("payment_reminders").add(data).await()
+                Log.d(TAG, "Pushed payment reminder for member $memberName ($memberId)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to push payment reminder: ${e.message}")
+            }
+        }
+    }
+
     suspend fun syncAllLocalToCloud(): Pair<Boolean, String> {
         val fs = firestore
         if (fs == null) {
@@ -430,10 +525,19 @@ class FirestoreSyncManager(
                 _statusMessage.value = "Synced ${members.size} members, ${contributions.size} contributions to Cloud Database."
                 Pair(true, "Successfully uploaded ${members.size} members and ${contributions.size} records to Central Firestore!")
             } catch (e: Exception) {
-                Log.e(TAG, "Error in syncAllLocalToCloud: ${e.message}", e)
-                _syncState.value = CloudSyncState.OFFLINE_CACHE
-                _statusMessage.value = "Sync failed: ${e.localizedMessage ?: "Unknown error"}"
-                Pair(false, "Cloud sync failed: ${e.localizedMessage ?: "Check connection"}")
+                val isPerm = (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) ||
+                        e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                if (isPerm) {
+                    Log.w(TAG, "Sync failed: PERMISSION_DENIED. Firestore rules require write permission.")
+                    _syncState.value = CloudSyncState.PERMISSION_REQUIRED
+                    _statusMessage.value = "Firestore permission required. Update Rules in Firebase Console."
+                    Pair(false, "Permission Denied: Configure Firestore Rules in your Firebase Console (see Settings for guide)")
+                } else {
+                    Log.w(TAG, "Error in syncAllLocalToCloud: ${e.message}")
+                    _syncState.value = CloudSyncState.OFFLINE_CACHE
+                    _statusMessage.value = "Sync failed: ${e.localizedMessage ?: "Unknown error"}"
+                    Pair(false, "Cloud sync failed: ${e.localizedMessage ?: "Check connection"}")
+                }
             }
         }
     }
@@ -472,9 +576,18 @@ class FirestoreSyncManager(
                 _statusMessage.value = "Downloaded ${members.size} members and ${contribs.size} contributions from Cloud."
                 Pair(true, "Successfully pulled ${members.size} members and ${contribs.size} records from Cloud!")
             } catch (e: Exception) {
-                Log.e(TAG, "Error in fetchAllFromCloud: ${e.message}", e)
-                _syncState.value = CloudSyncState.OFFLINE_CACHE
-                Pair(false, "Download failed: ${e.localizedMessage ?: "Check connection"}")
+                val isPerm = (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) ||
+                        e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                if (isPerm) {
+                    Log.w(TAG, "Fetch failed: PERMISSION_DENIED. Firestore rules require read permission.")
+                    _syncState.value = CloudSyncState.PERMISSION_REQUIRED
+                    _statusMessage.value = "Firestore permission required. Update Rules in Firebase Console."
+                    Pair(false, "Permission Denied: Configure Firestore Rules in your Firebase Console (see Settings for guide)")
+                } else {
+                    Log.w(TAG, "Error in fetchAllFromCloud: ${e.message}")
+                    _syncState.value = CloudSyncState.OFFLINE_CACHE
+                    Pair(false, "Download failed: ${e.localizedMessage ?: "Check connection"}")
+                }
             }
         }
     }
@@ -509,7 +622,7 @@ class FirestoreSyncManager(
             val id = doc.getLong("id") ?: 0L
             val memberId = doc.getLong("memberId") ?: return null
             val monthYear = doc.getString("monthYear") ?: return null
-            val amount = doc.getDouble("amount") ?: 500.0
+            val amount = doc.getDouble("amount") ?: 0.0
             val status = doc.getString("status") ?: Contribution.STATUS_PENDING
             val method = doc.getString("paymentMethod") ?: Contribution.METHOD_NONE
             val ref = doc.getString("transactionRef") ?: ""
@@ -540,16 +653,16 @@ class FirestoreSyncManager(
             if (!doc.exists()) return null
             AppConfig(
                 id = 1,
-                upiId = doc.getString("upiId") ?: "mayanwelfare@okhdfcbank",
-                upiName = doc.getString("upiName") ?: "MAYAN's Well Fare",
-                monthlyAmount = doc.getDouble("monthlyAmount") ?: 500.0,
-                adminPin = doc.getString("adminPin") ?: "1234",
-                fundTitle = doc.getString("fundTitle") ?: "MAYAN's Well Fare",
-                contactPhone = doc.getString("contactPhone") ?: "+91 98401 23456",
+                upiId = doc.getString("upiId") ?: "",
+                upiName = doc.getString("upiName") ?: "Welfare Fund",
+                monthlyAmount = doc.getDouble("monthlyAmount") ?: 0.0,
+                adminPin = doc.getString("adminPin") ?: "170588",
+                fundTitle = doc.getString("fundTitle") ?: "Welfare Fund",
+                contactPhone = doc.getString("contactPhone") ?: "",
                 reminderDayOfMonth = (doc.getLong("reminderDayOfMonth") ?: 1L).toInt(),
                 autoNotifyMissed = doc.getBoolean("autoNotifyMissed") ?: true,
-                adminName = doc.getString("adminName") ?: "Arthi",
-                adminEmail = doc.getString("adminEmail") ?: "arthi.eaglenewz@gmail.com"
+                adminName = doc.getString("adminName") ?: "Admin",
+                adminEmail = doc.getString("adminEmail") ?: ""
             )
         } catch (e: Exception) {
             null

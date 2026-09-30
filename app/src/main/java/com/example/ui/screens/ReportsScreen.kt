@@ -69,6 +69,7 @@ import com.example.data.model.MonthSummaryItem
 import com.example.data.model.OverallSummary
 import com.example.ui.WelfareViewModel
 import com.example.ui.components.AdBannerCard
+import com.example.ui.components.InFeedAdCard
 import com.example.ui.theme.EmeraldOnSuccessContainer
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.EmeraldSuccessContainer
@@ -724,6 +725,13 @@ fun ReportsScreen(
                     item = item,
                     defaultAmount = config.monthlyAmount
                 )
+
+                if (index == 2 || (index > 2 && (index - 2) % 4 == 0)) {
+                    InFeedAdCard(
+                        campaignIndex = (index + 2) % 3,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
             }
         }
     }

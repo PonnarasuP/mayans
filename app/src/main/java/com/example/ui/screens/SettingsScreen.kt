@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDone
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,10 +57,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.Contribution
 import com.example.data.remote.CloudSyncState
 import com.example.ui.components.AdBannerCard
 import androidx.compose.runtime.Composable
@@ -116,13 +120,15 @@ fun SettingsScreen(
 
     var isSyncingNow by remember { mutableStateOf(false) }
     var showArchitectureDialog by remember { mutableStateOf(false) }
+    var showRulesDialog by remember { mutableStateOf(false) }
 
     var upiId by remember(config) { mutableStateOf(config.upiId) }
     var upiName by remember(config) { mutableStateOf(config.upiName) }
-    var monthlyAmount by remember(config) { mutableStateOf(config.monthlyAmount.toInt().toString()) }
+    var adminName by remember(config) { mutableStateOf(config.adminName) }
+    var monthlyAmount by remember(config) { mutableStateOf(if (config.monthlyAmount > 0) config.monthlyAmount.toInt().toString() else "") }
     var contactPhone by remember(config) { mutableStateOf(config.contactPhone) }
-    var adminPin by remember(config) { mutableStateOf(config.adminPin) }
-    var showPin by remember { mutableStateOf(false) }
+    var newAdminPin by remember { mutableStateOf("") }
+    var showResetMembersDialog by remember { mutableStateOf(false) }
     var autoNotify by remember(config) { mutableStateOf(config.autoNotifyMissed) }
     var auditFilter by remember { mutableStateOf("ALL") }
 
@@ -175,7 +181,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Administrator: ${config.adminName}",
+                                    text = if (config.adminName.isNotBlank()) "Administrator: ${config.adminName}" else "Administrator (Admin)",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -282,28 +288,33 @@ fun SettingsScreen(
                     val isConnected = syncState == CloudSyncState.CONNECTED || syncState == CloudSyncState.SYNCED
                     val isSyncing = syncState == CloudSyncState.SYNCING
                     val isOffline = syncState == CloudSyncState.OFFLINE_CACHE
+                    val isPermissionDenied = syncState == CloudSyncState.PERMISSION_REQUIRED
                     
                     val badgeBg = when {
                         isConnected -> Color(0xFF064E3B).copy(alpha = 0.15f)
                         isSyncing -> Color(0xFF78350F).copy(alpha = 0.15f)
+                        isPermissionDenied -> Color(0xFF7F1D1D).copy(alpha = 0.15f)
                         isOffline -> Color(0xFF1E3A8A).copy(alpha = 0.15f)
                         else -> Color(0xFF4C1D95).copy(alpha = 0.15f)
                     }
                     val badgeTextColor = when {
                         isConnected -> Color(0xFF059669)
                         isSyncing -> Color(0xFFD97706)
+                        isPermissionDenied -> Color(0xFFDC2626)
                         isOffline -> Color(0xFF2563EB)
                         else -> Color(0xFF7C3AED)
                     }
                     val badgeText = when {
                         isConnected -> "🟢 Central Database Connected & Active"
                         isSyncing -> "🔄 Syncing with Cloud Database..."
+                        isPermissionDenied -> "🔒 Firestore Permission Required (Rules Lock)"
                         isOffline -> "⚡ Offline Cache Active (Local SQLite Room)"
                         else -> "⚙️ Central Cloud Storage Initialized"
                     }
                     val badgeIcon = when {
                         isConnected -> Icons.Default.CloudDone
                         isSyncing -> Icons.Default.Sync
+                        isPermissionDenied -> Icons.Default.Lock
                         isOffline -> Icons.Default.Storage
                         else -> Icons.Default.Cloud
                     }
@@ -331,6 +342,39 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = badgeTextColor
                             )
+                        }
+                    }
+
+                    if (isPermissionDenied) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "⚠️ Firestore Security Rules Need Update",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFB91C1C)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Firebase Project 'mayans-18844' has default locked rules (PERMISSION_DENIED). The local Room database is active and working seamlessly.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF7F1D1D)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedButton(
+                                    onClick = { showRulesDialog = true },
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB91C1C)),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("View Rules Setup Guide", fontSize = 11.sp)
+                                }
+                            }
                         }
                     }
 
@@ -540,6 +584,17 @@ fun SettingsScreen(
                     }
 
                     OutlinedTextField(
+                        value = adminName,
+                        onValueChange = { adminName = it },
+                        label = { Text("Admin Name") },
+                        placeholder = { Text("Enter your name as Fund Admin") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_admin_name_input")
+                    )
+
+                    OutlinedTextField(
                         value = upiId,
                         onValueChange = { upiId = it },
                         label = { Text("Receiver UPI ID (Contributions Target)") },
@@ -577,9 +632,10 @@ fun SettingsScreen(
 
                     Button(
                         onClick = {
-                            val amount = monthlyAmount.toDoubleOrNull() ?: 500.0
+                            val amount = monthlyAmount.toDoubleOrNull() ?: 0.0
                             viewModel.updateConfig(
                                 config.copy(
+                                    adminName = adminName.trim(),
                                     upiId = upiId.trim(),
                                     upiName = upiName.trim(),
                                     monthlyAmount = amount,
@@ -599,6 +655,14 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        // Sponsored Partner Ad Banner
+        item {
+            AdBannerCard(
+                campaignIndex = 0,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
 
         // 4. Admin Security PIN Management
@@ -634,19 +698,13 @@ fun SettingsScreen(
                     )
 
                     OutlinedTextField(
-                        value = adminPin,
-                        onValueChange = { if (it.length <= 8) adminPin = it },
-                        label = { Text("Security PIN") },
+                        value = newAdminPin,
+                        onValueChange = { if (it.length <= 8) newAdminPin = it },
+                        label = { Text("New Security PIN") },
+                        placeholder = { Text("••••••") },
+                        supportingText = { Text("Current PIN is kept confidential. Enter a new PIN here only to change it.") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = if (showPin) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPin = !showPin }) {
-                                Icon(
-                                    imageVector = if (showPin) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle PIN Visibility"
-                                )
-                            }
-                        },
+                        visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -655,13 +713,17 @@ fun SettingsScreen(
 
                     Button(
                         onClick = {
-                            if (adminPin.length < 4) {
+                            if (newAdminPin.isBlank()) {
+                                Toast.makeText(context, "Please enter a new PIN", Toast.LENGTH_SHORT).show()
+                            } else if (newAdminPin.length < 4) {
                                 Toast.makeText(context, "PIN must be at least 4 digits", Toast.LENGTH_SHORT).show()
                             } else {
-                                viewModel.updateConfig(config.copy(adminPin = adminPin.trim()))
+                                viewModel.updateConfig(config.copy(adminPin = newAdminPin.trim()))
+                                newAdminPin = ""
                                 Toast.makeText(context, "Admin PIN successfully updated!", Toast.LENGTH_SHORT).show()
                             }
                         },
+                        enabled = newAdminPin.isNotBlank(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("save_pin_btn")
@@ -732,7 +794,7 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "Automatically alerts members with pending ₹500 dues on the 1st of each month.",
+                                text = if (config.monthlyAmount > 0) "Automatically alerts members with pending ₹${config.monthlyAmount.toInt()} dues on the 1st of each month." else "Automatically alerts members with pending dues on the 1st of each month.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -749,14 +811,68 @@ fun SettingsScreen(
 
                     HorizontalDivider()
 
+                    val rawContributions by viewModel.rawMonthlyContributions.collectAsStateWithLifecycle()
+                    val pendingContributions = rawContributions.filter { it.displayStatus == Contribution.STATUS_PENDING || it.isOverdue }
+                    var selectedTargetMemberId by remember { mutableStateOf<Long?>(null) }
+
+                    // Display pending members count
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "Pending for ${WelfareViewModel.formatMonthDisplay(viewModel.selectedMonthYear.value)}: ${pendingContributions.size} members",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (pendingContributions.isNotEmpty()) {
+                                Text(
+                                    text = pendingContributions.joinToString(", ") { it.member.name },
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Text(
+                                    text = "All active members have cleared dues for this month.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+
+                    // Privacy notice
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Privacy Rule: Members will only receive their own notification on their phone. Other members' notifications are never shown.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
                     Button(
                         onClick = {
-                            val count = viewModel.sendMissedReminderNotifications(context)
-                            Toast.makeText(
-                                context,
-                                "Dispatched push reminder to $count members with pending dues.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            val notified = viewModel.sendMissedReminderNotifications(context)
+                            if (notified.isEmpty()) {
+                                Toast.makeText(context, "No members are currently pending for this month.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Dispatched notification to ${notified.size} pending members: ${notified.joinToString(", ")}. Only their device will show their notification.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
@@ -770,21 +886,79 @@ fun SettingsScreen(
                         Text("Broadcast Reminders to Pending Members")
                     }
 
+                    if (pendingContributions.isNotEmpty()) {
+                        Text(
+                            text = "Or Send Notification to Specific Member:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val activeTarget = pendingContributions.find { it.member.id == selectedTargetMemberId } ?: pendingContributions.firstOrNull()
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (activeTarget != null) {
+                                        viewModel.sendSingleMemberReminder(
+                                            context = context,
+                                            memberId = activeTarget.member.id,
+                                            memberName = activeTarget.member.name,
+                                            monthYear = viewModel.selectedMonthYear.value,
+                                            amount = activeTarget.amount ?: config.monthlyAmount
+                                        )
+                                        Toast.makeText(
+                                            context,
+                                            "Payment due reminder sent for ${activeTarget.member.name}. Delivered only to their phone.",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("send_single_reminder_btn")
+                            ) {
+                                Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Send Reminder to ${activeTarget?.member?.name ?: "Member"}", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5b. Database Management: Clear / Reset Members (Admin Clean Slate)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Member Database Management",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Remove all existing members and contribution records to start 100% fresh with your real members.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedButton(
-                        onClick = {
-                            NotificationHelper.sendContributionReminderNotification(
-                                context = context,
-                                memberName = "Aarthi Sundaram",
-                                monthYear = viewModel.selectedMonthYear.value,
-                                amount = config.monthlyAmount
-                            )
-                            Toast.makeText(context, "Test notification dispatched to your phone!", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("test_push_notification_btn")
+                        onClick = { showResetMembersDialog = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth().testTag("reset_all_members_btn")
                     ) {
-                        Text("Trigger Test Dues Notification")
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Clear All Members / Start Fresh")
                     }
                 }
             }
@@ -931,8 +1105,41 @@ fun SettingsScreen(
         }
 
         item {
+            AdBannerCard(
+                campaignIndex = 1,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+        }
+
+        item {
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
+
+    if (showResetMembersDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetMembersDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Clear All Members?", fontWeight = FontWeight.Bold) },
+            text = { Text("This will permanently delete all existing members and contribution records from local and cloud storage. You can then add your actual members by name.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllMembers()
+                        showResetMembersDialog = false
+                        Toast.makeText(context, "All members cleared. You can now add your real members!", Toast.LENGTH_LONG).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Yes, Clear All")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetMembersDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showArchitectureDialog) {
@@ -964,7 +1171,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "2. Admin Exclusivity: Only admin (${config.adminName}) has permission to edit fund parameters, change the receiver UPI ID, and trigger push reminders. Non-admins cannot access or edit Settings.",
+                        text = "2. Admin Exclusivity: Only the designated admin (${if (config.adminName.isNotBlank()) config.adminName else "Admin"}) has permission to edit fund parameters, change the receiver UPI ID, and trigger push reminders. Non-admins cannot access or edit Settings.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -986,6 +1193,95 @@ fun SettingsScreen(
                     modifier = Modifier.testTag("close_architecture_dialog_btn")
                 ) {
                     Text("Got It")
+                }
+            }
+        )
+    }
+
+    if (showRulesDialog) {
+        val rulesSnippet = """rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}"""
+        AlertDialog(
+            onDismissRequest = { showRulesDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Firestore Security Rules Setup",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "To enable centralized real-time synchronization on project 'mayans-18844':",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "1. Open Firebase Console -> Firestore Database -> Rules tab.",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "2. Replace the rules with the snippet below and click 'Publish':",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(6.dp)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = rulesSnippet,
+                            fontSize = 11.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                    Text(
+                        text = "Note: In the meantime, the app continues to operate seamlessly with zero data loss using its local Room SQLite database.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Firestore Rules", rulesSnippet)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Rules copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        showRulesDialog = false
+                    }
+                ) {
+                    Text("Copy Rules & Close")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRulesDialog = false }) {
+                    Text("Close")
                 }
             }
         )

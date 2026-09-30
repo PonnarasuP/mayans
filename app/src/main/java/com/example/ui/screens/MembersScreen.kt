@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -49,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Member
 import com.example.ui.WelfareViewModel
+import com.example.ui.components.AdBannerCard
+import com.example.ui.components.InFeedAdCard
 import com.example.ui.components.AddEditMemberDialog
 
 @Composable
@@ -76,30 +80,112 @@ fun MembersScreen(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "MAYAN Welfare Contributing Members",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Group Members",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Total ${members.size} members",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (isAdminMode) {
+                            Button(
+                                onClick = { showAddDialog = true },
+                                modifier = Modifier.testTag("admin_add_member_btn")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Member")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sponsored Ad Banner at top of members list
+            item {
+                AdBannerCard(
+                    campaignIndex = 2,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            if (members.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
-                        Text(
-                            text = "Total ${members.size} active members contributing ₹500 monthly.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = "No Members Added Yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isAdminMode) "Tap 'Add Member' to register group members by their name." else "Admin will add members to the fund group.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                itemsIndexed(members, key = { _, member -> member.id }) { index, member ->
+                    MemberItemCard(
+                        member = member,
+                        isAdminMode = isAdminMode,
+                        onEdit = { editingMember = member },
+                        onDelete = {
+                            viewModel.deleteMember(member)
+                            Toast.makeText(context, "Removed ${member.name}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    // Insert in-feed ad banner after 3rd member and periodically in list
+                    if (index == 2 || (index > 2 && (index - 2) % 4 == 0)) {
+                        InFeedAdCard(
+                            campaignIndex = (index + 1) % 3,
+                            modifier = Modifier.padding(vertical = 4.dp)
                         )
                     }
                 }
             }
 
-            items(members, key = { it.id }) { member ->
-                MemberItemCard(
-                    member = member,
-                    isAdminMode = isAdminMode,
-                    onEdit = { editingMember = member },
-                    onDelete = {
-                        viewModel.deleteMember(member)
-                        Toast.makeText(context, "Removed ${member.name}", Toast.LENGTH_SHORT).show()
-                    }
+            // Sponsored Ad Banner at bottom of list
+            item {
+                AdBannerCard(
+                    campaignIndex = 0,
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 

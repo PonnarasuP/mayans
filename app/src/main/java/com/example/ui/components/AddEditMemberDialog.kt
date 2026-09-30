@@ -53,10 +53,6 @@ fun AddEditMemberDialog(
             nameError = true
             return
         }
-        if (phone.isBlank()) {
-            phoneError = true
-            return
-        }
 
         val member = initialMember?.copy(
             name = name.trim(),
@@ -112,13 +108,11 @@ fun AddEditMemberDialog(
                         phone = it
                         phoneError = false
                     },
-                    label = { Text("Phone Number (for reminders) *") },
+                    label = { Text("Phone Number (Optional)") },
                     leadingIcon = {
                         Icon(imageVector = Icons.Default.Phone, contentDescription = null)
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    isError = phoneError,
-                    supportingText = { if (phoneError) Text("Phone number is required") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()

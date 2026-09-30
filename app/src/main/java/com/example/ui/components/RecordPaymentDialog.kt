@@ -45,7 +45,7 @@ fun RecordPaymentDialog(
     onAdminDirectRecord: (memberId: Long, amount: Double, method: String, ref: String, remarks: String) -> Unit
 ) {
     var selectedMethod by remember { mutableStateOf("UPI") } // "UPI" or "CASH"
-    var amountText by remember { mutableStateOf(defaultAmount.toInt().toString()) }
+    var amountText by remember { mutableStateOf(if (defaultAmount > 0) defaultAmount.toInt().toString() else "") }
     var refText by remember { mutableStateOf("") }
     var noteText by remember { mutableStateOf("") }
 
@@ -132,7 +132,7 @@ fun RecordPaymentDialog(
                         value = noteText,
                         onValueChange = { noteText = it },
                         label = { Text("Cash Details / Handover Note") },
-                        placeholder = { Text("e.g. Handed cash to Mayan at welfare meeting") },
+                        placeholder = { Text("e.g. Handed cash in person to admin") },
                         maxLines = 2,
                         supportingText = {
                             if (isAdminMode) {
@@ -146,6 +146,11 @@ fun RecordPaymentDialog(
                             .testTag("cash_note_input")
                     )
                 }
+
+                CompactAdBanner(
+                    campaignIndex = 1,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         },
         confirmButton = {

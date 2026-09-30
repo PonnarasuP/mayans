@@ -39,6 +39,10 @@ class WelfareRepository(
         return contributionDao.getContributionsForMember(memberId)
     }
 
+    suspend fun getAllMembersSync(): List<Member> {
+        return memberDao.getAllMembersSync()
+    }
+
     suspend fun getMemberById(id: Long): Member? {
         return memberDao.getMemberByIdSync(id)
     }
@@ -74,6 +78,7 @@ class WelfareRepository(
     }
 
     suspend fun deleteMember(member: Member) {
+        contributionDao.deleteContributionsForMember(member.id)
         memberDao.deleteMember(member)
         val log = AuditLog(
             action = "MEMBER_DELETED",
@@ -82,6 +87,39 @@ class WelfareRepository(
         )
         val logId = auditLogDao.insertLog(log)
         syncManager?.deleteMemberFromCloud(member.id)
+        syncManager?.pushAuditLog(log.copy(id = logId))
+    }
+
+    suspend fun clearHardcodedDemoData() {
+        val demoNames = setOf(
+            "Arthi (Admin)", "Sundaram K.", "Karthik Raja", "Priya Natarajan",
+            "Saravanan V.", "Divya Bharathi", "Vignesh Kumar", "Anand Chandran",
+            "Meenakshi S.", "Rajesh Kannan", "Aarthi Sundaram", "Arthi", "Demo Member",
+            "Member 1", "Member 2", "Test Member"
+        )
+        val currentMembers = memberDao.getAllMembersSync()
+        for (m in currentMembers) {
+            if (m.name in demoNames || m.name.contains("Demo", ignoreCase = true) || m.name.contains("Sample", ignoreCase = true)) {
+                contributionDao.deleteContributionsForMember(m.id)
+                memberDao.deleteMember(m)
+                syncManager?.deleteMemberFromCloud(m.id)
+            }
+        }
+    }
+
+    suspend fun clearAllMembers() {
+        val currentMembers = memberDao.getAllMembersSync()
+        for (m in currentMembers) {
+            contributionDao.deleteContributionsForMember(m.id)
+            memberDao.deleteMember(m)
+            syncManager?.deleteMemberFromCloud(m.id)
+        }
+        val log = AuditLog(
+            action = "MEMBERS_CLEARED",
+            description = "Admin cleared all members and associated records.",
+            performedByRole = "ADMIN"
+        )
+        val logId = auditLogDao.insertLog(log)
         syncManager?.pushAuditLog(log.copy(id = logId))
     }
 
@@ -275,6 +313,8 @@ class WelfareRepository(
 
     suspend fun markMissedContributionsOverdue(monthYear: String) {
         val membersWithStatus = contributionDao.getMembersWithContributionForMonth(monthYear).firstOrNull() ?: emptyList()
+        val config = configDao.getConfigSync()
+        val defaultMonthlyAmount = config?.monthlyAmount ?: 0.0
         var count = 0
         for (item in membersWithStatus) {
             val status = item.displayStatus
@@ -287,7 +327,7 @@ class WelfareRepository(
                     Contribution(
                         memberId = item.member.id,
                         monthYear = monthYear,
-                        amount = 500.0,
+                        amount = defaultMonthlyAmount,
                         status = Contribution.STATUS_OVERDUE,
                         paymentMethod = Contribution.METHOD_NONE,
                         remarks = "Missed contribution beginning of month"

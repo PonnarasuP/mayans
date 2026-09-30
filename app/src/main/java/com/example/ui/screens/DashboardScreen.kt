@@ -1,8 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,56 +17,43 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AddAlert
-import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
-import com.example.data.remote.CloudSyncState
-import androidx.compose.material.icons.filled.HourglassTop
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Money
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import android.widget.Toast
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,31 +62,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AppConfig
 import com.example.data.model.Contribution
-import com.example.data.model.MemberOverallSummary
+import com.example.data.model.Member
 import com.example.data.model.MemberWithContribution
-import com.example.data.model.MonthSummaryItem
-import com.example.data.model.OverallSummary
 import com.example.ui.WelfareViewModel
 import com.example.ui.components.AdBannerCard
+import com.example.ui.components.CompactAdBanner
+import com.example.ui.components.InFeedAdCard
 import com.example.ui.components.QrCodeCanvas
 import com.example.ui.components.RecordPaymentDialog
-import com.example.ui.theme.AmberOnPendingContainer
 import com.example.ui.theme.AmberPending
 import com.example.ui.theme.AmberPendingContainer
-import com.example.ui.theme.EmeraldOnSuccessContainer
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.EmeraldSuccessContainer
-import com.example.ui.theme.RoseOnOverdueContainer
 import com.example.ui.theme.RoseOverdue
 import com.example.ui.theme.RoseOverdueContainer
 import com.example.util.UpiHelper
@@ -121,24 +105,37 @@ fun DashboardScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showQrBottomSheet by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
+
+    // Observe active member for Member view
+    val allMembers by viewModel.allMembers.collectAsStateWithLifecycle()
+    val currentMember by viewModel.currentDeviceMember.collectAsStateWithLifecycle()
+    val memberMonthlyContribution by viewModel.memberMonthlyContribution.collectAsStateWithLifecycle()
+    val memberOverallSummary by viewModel.memberOverallSummary.collectAsStateWithLifecycle()
+    val pendingMonthsList by viewModel.memberPendingMonths.collectAsStateWithLifecycle()
+
+    var showMemberSelectorDialog by remember { mutableStateOf(false) }
+    var showQrDialog by remember { mutableStateOf(false) }
+    var showCashDialogForMember by remember { mutableStateOf(false) }
+    var showSetMonthlyAmountDialog by remember { mutableStateOf(false) }
+    var newMonthlyAmountInput by remember(config.monthlyAmount) { mutableStateOf(if (config.monthlyAmount > 0) config.monthlyAmount.toInt().toString() else "") }
+    var customQrAmount by remember(config.monthlyAmount) { mutableStateOf(if (config.monthlyAmount > 0) config.monthlyAmount.toInt().toString() else "") }
+    var customCashAmount by remember(config.monthlyAmount) { mutableStateOf(if (config.monthlyAmount > 0) config.monthlyAmount.toInt().toString() else "") }
+    var cashNote by remember { mutableStateOf("") }
     var selectedItemForPayment by remember { mutableStateOf<MemberWithContribution?>(null) }
+    var memberSearchFilter by remember { mutableStateOf("") }
 
-    val overallSummary by viewModel.overallSummary.collectAsStateWithLifecycle()
-    val dashboardTab by viewModel.dashboardTab.collectAsStateWithLifecycle()
-    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    // Month navigation calculations
+    val availableMonths = viewModel.availableMonths
+    val currentMonthIndex = availableMonths.indexOf(selectedMonth)
+    val hasPrevMonth = currentMonthIndex != -1 && currentMonthIndex < availableMonths.size - 1
+    val hasNextMonth = currentMonthIndex > 0
 
-    // Aggregate statistics
-    val totalMembers = contributions.size
-    val paidMembers = contributions.count { it.isPaid }
-    val cashPendingMembers = contributions.count { it.isCashPending }
-    val overdueMembers = contributions.count { it.isOverdue }
-    val pendingMembers = contributions.count { it.displayStatus == Contribution.STATUS_PENDING }
-
-    val monthlyTarget = totalMembers * config.monthlyAmount
-    val totalCollected = paidMembers * config.monthlyAmount
-    val totalPending = (totalMembers - paidMembers) * config.monthlyAmount
-    val progressPercent = if (monthlyTarget > 0) (totalCollected / monthlyTarget).toFloat() else 0f
+    // Stats for Admin
+    val totalCount = contributions.size
+    val paidCount = contributions.count { it.isPaid }
+    val pendingCount = contributions.count { it.displayStatus == Contribution.STATUS_PENDING || it.isOverdue }
+    val cashPendingList = contributions.filter { it.isCashPending }
 
     LazyColumn(
         modifier = modifier
@@ -147,336 +144,460 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Tab Mode Selector: Overall Summary (All-Time) vs Monthly View
+        // -------------------------------------------------------------
+        // 1. MONTH SELECTOR (Monthly Wise Navigation)
+        // -------------------------------------------------------------
         item {
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("month_selector_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { viewModel.setDashboardTab("OVERALL") }
-                            .testTag("tab_overall_summary"),
-                        color = if (dashboardTab == "OVERALL") MaterialTheme.colorScheme.primary else Color.Transparent,
-                        shape = RoundedCornerShape(10.dp)
+                    IconButton(
+                        onClick = {
+                            if (hasPrevMonth) {
+                                viewModel.selectMonth(availableMonths[currentMonthIndex + 1])
+                            }
+                        },
+                        enabled = hasPrevMonth
                     ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Assessment,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (dashboardTab == "OVERALL") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Overall Summary",
-                                fontSize = 13.sp,
-                                fontWeight = if (dashboardTab == "OVERALL") FontWeight.Bold else FontWeight.Medium,
-                                color = if (dashboardTab == "OVERALL") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Month")
                     }
 
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { viewModel.setDashboardTab("MONTHLY") }
-                            .testTag("tab_monthly_summary"),
-                        color = if (dashboardTab == "MONTHLY") MaterialTheme.colorScheme.primary else Color.Transparent,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CalendarMonth,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (dashboardTab == "MONTHLY") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Monthly View",
-                                fontSize = 13.sp,
-                                fontWeight = if (dashboardTab == "MONTHLY") FontWeight.Bold else FontWeight.Medium,
-                                color = if (dashboardTab == "MONTHLY") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Centralized Cloud Database Real-Time Status Pill
-        item {
-            val isConnected = syncState == CloudSyncState.CONNECTED || syncState == CloudSyncState.SYNCED
-            val isSyncing = syncState == CloudSyncState.SYNCING
-            val isOffline = syncState == CloudSyncState.OFFLINE_CACHE
-
-            val pillBg = when {
-                isConnected -> Color(0xFF064E3B).copy(alpha = 0.12f)
-                isSyncing -> Color(0xFF78350F).copy(alpha = 0.12f)
-                isOffline -> Color(0xFF1E3A8A).copy(alpha = 0.12f)
-                else -> Color(0xFF4C1D95).copy(alpha = 0.12f)
-            }
-            val pillTextColor = when {
-                isConnected -> Color(0xFF059669)
-                isSyncing -> Color(0xFFD97706)
-                isOffline -> Color(0xFF2563EB)
-                else -> Color(0xFF7C3AED)
-            }
-            val pillText = when {
-                isConnected -> "🟢 Centralized Database: Firebase Firestore Active (Real-Time)"
-                isSyncing -> "🔄 Syncing with Central Cloud Database..."
-                isOffline -> "⚡ Central Database: Offline Cache Active (Local Room SQLite)"
-                else -> "⚙️ Central Database: Ready for Firebase Credentials"
-            }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable {
-                        viewModel.syncAllToCloud { _, msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    .testTag("dashboard_cloud_status_pill"),
-                color = pillBg,
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.CloudDone,
+                            imageVector = Icons.Default.CalendarMonth,
                             contentDescription = null,
-                            tint = pillTextColor,
-                            modifier = Modifier.size(16.dp)
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = pillText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = pillTextColor
+                            text = WelfareViewModel.formatMonthDisplay(selectedMonth),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    Icon(
-                        imageVector = Icons.Default.CloudSync,
-                        contentDescription = "Sync Now",
-                        tint = pillTextColor,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    IconButton(
+                        onClick = {
+                            if (hasNextMonth) {
+                                viewModel.selectMonth(availableMonths[currentMonthIndex - 1])
+                            }
+                        },
+                        enabled = hasNextMonth
+                    ) {
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Next Month")
+                    }
                 }
             }
         }
 
-        if (dashboardTab == "OVERALL") {
-            // 1. Overall Hero Financial Card
+        // =============================================================
+        // 2. MEMBER VIEW (When in Member Mode)
+        // User request: "Member can only see monthly payment status, overall status and pending."
+        // =============================================================
+        if (!isAdminMode) {
+            // Identity Banner
             item {
-                OverallFinancialOverviewCard(
-                    overallSummary = overallSummary,
-                    config = config,
-                    onShareReport = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "${config.fundTitle} - Overall Summary")
-                            putExtra(Intent.EXTRA_TEXT, viewModel.buildOverallShareReportText())
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share Overall Summary via"))
-                    },
-                    onQuickPay = { showQrBottomSheet = true }
-                )
-            }
-
-            // 2. Quick Action Banner
-            item {
-                QuickActionBanner(
-                    isAdminMode = isAdminMode,
-                    config = config,
-                    selectedMonth = selectedMonth,
-                    cashPendingCount = cashPendingCount,
-                    onShowQr = { showQrBottomSheet = true },
-                    onSendReminders = {
-                        val count = viewModel.sendMissedReminderNotifications(context)
-                        Toast.makeText(
-                            context,
-                            "Push notifications dispatched to $count members with pending dues.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    },
-                    onViewCashApprovals = onNavigateToCashVerification
-                )
-            }
-
-            // 3. Native Ad Banner
-            item {
-                AdBannerCard(campaignIndex = 0)
-            }
-
-            // 4. Monthly Trend Comparison Header & Items
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showMemberSelectorDialog = true }
+                        .testTag("member_profile_chip"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
                 ) {
-                    Text(
-                        text = "Monthly Breakdown Trends (${overallSummary.monthlyBreakdowns.size} Months)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Member Profile",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = currentMember?.name ?: "Select Your Name",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        TextButton(onClick = { showMemberSelectorDialog = true }) {
+                            Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Switch", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
 
-            items(overallSummary.monthlyBreakdowns, key = { it.monthYear }) { monthItem ->
-                MonthSummaryRowCard(
-                    monthItem = monthItem,
-                    onViewMonth = {
-                        viewModel.selectMonth(monthItem.monthYear)
-                        viewModel.setDashboardTab("MONTHLY")
-                    }
-                )
-            }
-
-            // 5. Member Lifetime Contribution Ledger Header
+            // A. Monthly Payment Status (Monthly Wise)
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Member All-Time Ledger (${overallSummary.memberSummaries.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                val isPaid = memberMonthlyContribution?.isPaid == true
+                val isCashPending = memberMonthlyContribution?.isCashPending == true
+
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("monthly_payment_status_card"),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = when {
+                            isPaid -> EmeraldSuccessContainer.copy(alpha = 0.5f)
+                            isCashPending -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                            else -> AmberPendingContainer.copy(alpha = 0.5f)
+                        }
                     )
-                    if (isAdminMode) {
-                        FilledTonalButton(
-                            onClick = onNavigateToMembers,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("manage_members_btn")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Manage", fontSize = 12.sp)
+                            Column {
+                                Text(
+                                    text = "Monthly Payment Status",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = WelfareViewModel.formatMonthDisplay(selectedMonth),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        when {
+                                            isPaid -> EmeraldSuccess
+                                            isCashPending -> MaterialTheme.colorScheme.secondary
+                                            else -> AmberPending
+                                        }
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = when {
+                                        isPaid -> "PAID"
+                                        isCashPending -> "VERIFYING CASH"
+                                        else -> "PENDING"
+                                    },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        if (isPaid) {
+                            val c = memberMonthlyContribution
+                            val paidAmt = c?.amount ?: config.monthlyAmount
+                            val paidStr = if (paidAmt > 0) "₹${paidAmt.toInt()}" else "Contribution"
+                            Text(
+                                text = "$paidStr contributed via ${c?.paymentMethod ?: "UPI"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldSuccess
+                            )
+                            if (!c?.transactionRef.isNullOrBlank()) {
+                                Text(
+                                    text = "Ref/UTR: ${c?.transactionRef}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else if (isCashPending) {
+                            val c = memberMonthlyContribution
+                            val claimAmt = c?.amount ?: config.monthlyAmount
+                            val claimStr = if (claimAmt > 0) " of ₹${claimAmt.toInt()}" else ""
+                            Text(
+                                text = "Cash payment$claimStr submitted. Waiting for Admin approval.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val dueAmt = config.monthlyAmount
+                            Text(
+                                text = if (dueAmt > 0) "Contribution of ₹${dueAmt.toInt()} is pending for this month." else "Contribution is pending for this month.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                            // Payment Options Monthly Wise
+                            Text(
+                                text = "Payment Options",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val upiUri = UpiHelper.buildUpiUri(
+                                            upiId = config.upiId,
+                                            name = config.upiName,
+                                            amount = config.monthlyAmount,
+                                            note = "Welfare $selectedMonth - ${currentMember?.name ?: ""}"
+                                        )
+                                        val intent = Intent(Intent.ACTION_VIEW, upiUri)
+                                        try {
+                                            context.startActivity(Intent.createChooser(intent, "Pay via UPI App"))
+                                        } catch (_: Exception) {
+                                            Toast.makeText(context, "No UPI app found. Please use QR code or copy UPI ID.", Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("pay_upi_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(if (config.monthlyAmount > 0) "Pay ₹${config.monthlyAmount.toInt()}" else "Pay Online", fontSize = 13.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showQrDialog = true },
+                                    modifier = Modifier.testTag("show_qr_btn")
+                                ) {
+                                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("QR", fontSize = 13.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showCashDialogForMember = true },
+                                    modifier = Modifier.testTag("pay_cash_btn")
+                                ) {
+                                    Icon(Icons.Default.Money, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Cash", fontSize = 13.sp)
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // 6. Member Lifetime Contribution Items
-            items(overallSummary.memberSummaries, key = { it.member.id }) { item ->
-                MemberOverallSummaryCard(
-                    summary = item,
-                    monthlyAmount = config.monthlyAmount,
-                    onPay = {
-                        UpiHelper.launchUpiPayment(
-                            context = context,
-                            upiId = config.upiId,
-                            name = config.upiName,
-                            amount = item.totalPending.coerceAtLeast(config.monthlyAmount),
-                            note = "MAYAN Welfare Contribution ${item.member.name}"
+            // Sponsored Ad Banner right below the Current Month Status & Payment card
+            item {
+                AdBannerCard(
+                    campaignIndex = 1,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            // B. Overall Status
+            item {
+                val summary = memberOverallSummary
+                val totalContributed = summary?.totalContributed ?: 0.0
+                val totalPending = summary?.totalPending ?: 0.0
+                val monthsPaid = summary?.monthsPaid ?: 0
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("overall_status_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Overall Status",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Total Contributed", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("₹${totalContributed.toInt()}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = EmeraldSuccess)
+                            }
+                            Column {
+                                Text("Months Cleared", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$monthsPaid Months", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Column {
+                                Text("Overall Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = if (totalPending <= 0) "Cleared" else "₹${totalPending.toInt()}",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (totalPending <= 0) EmeraldSuccess else RoseOverdue
+                                )
+                            }
+                        }
                     }
-                )
+                }
             }
-        } else {
-            // MONTHLY VIEW
-            // Overall summary ribbon banner for quick awareness
+
+            // C. Pending Dues (List of all pending months)
             item {
-                OverallSummaryBanner(
-                    totalCollected = overallSummary.totalCollected,
-                    totalPending = overallSummary.totalPending,
-                    onSwitchToOverall = { viewModel.setDashboardTab("OVERALL") }
+                val pendingMonths = pendingMonthsList
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pending_dues_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Pending Contributions",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (pendingMonths.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(RoseOverdue.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "${pendingMonths.size} Pending",
+                                        color = RoseOverdue,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        if (pendingMonths.isEmpty()) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldSuccess, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "All contributions are up to date! Thank you.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            for (month in pendingMonths) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = WelfareViewModel.formatMonthDisplay(month),
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = if (config.monthlyAmount > 0) "Due: ₹${config.monthlyAmount.toInt()}" else "Due",
+                                            fontSize = 11.sp,
+                                            color = RoseOverdue
+                                        )
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.selectMonth(month)
+                                            val upiUri = UpiHelper.buildUpiUri(
+                                                upiId = config.upiId,
+                                                name = config.upiName,
+                                                amount = config.monthlyAmount,
+                                                note = "Welfare $month - ${currentMember?.name ?: ""}"
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW, upiUri)
+                                            try {
+                                                context.startActivity(Intent.createChooser(intent, "Pay via UPI App"))
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Please copy UPI ID: ${config.upiId}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    ) {
+                                        Text(if (config.monthlyAmount > 0) "Pay ₹${config.monthlyAmount.toInt()}" else "Pay", fontSize = 12.sp)
+                                    }
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sponsored in-feed ad below pending list
+            item {
+                InFeedAdCard(
+                    campaignIndex = 2,
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 
-            // Month Selector Bar
-            item {
-                MonthSelectorCard(
-                    currentMonth = selectedMonth,
-                    availableMonths = viewModel.availableMonths,
-                    onMonthSelected = { viewModel.selectMonth(it) }
-                )
-            }
-
-            // Financial Overview Card for the Selected Month
-            item {
-                FinancialOverviewCard(
-                    monthName = WelfareViewModel.formatMonthDisplay(selectedMonth),
-                    totalCollected = totalCollected,
-                    totalPending = totalPending,
-                    targetAmount = monthlyTarget,
-                    progressPercent = progressPercent,
-                    paidCount = paidMembers,
-                    totalCount = totalMembers
-                )
-            }
-
-            // Quick Pay & Action Banner
-            item {
-                QuickActionBanner(
-                    isAdminMode = isAdminMode,
-                    config = config,
-                    selectedMonth = selectedMonth,
-                    cashPendingCount = cashPendingCount,
-                    onShowQr = { showQrBottomSheet = true },
-                    onSendReminders = {
-                        val count = viewModel.sendMissedReminderNotifications(context)
-                        Toast.makeText(
-                            context,
-                            "Push notifications dispatched to $count members with pending dues.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    },
-                    onViewCashApprovals = onNavigateToCashVerification
-                )
-            }
-
-            // Native Ad Banner
-            item {
-                AdBannerCard(campaignIndex = 0)
-            }
-
-            // Filter & Search Controls
-            item {
-                FilterAndSearchSection(
-                    searchQuery = searchQuery,
-                    onSearchChange = { viewModel.setSearchQuery(it) },
-                    statusFilter = statusFilter,
-                    onFilterChange = { viewModel.setStatusFilter(it) },
-                    paidCount = paidMembers,
-                    pendingCount = pendingMembers + overdueMembers,
-                    cashPendingCount = cashPendingMembers
-                )
-            }
-
-            // Member list header
+            // D. Members Contribution Monthly-wise (Transparency for group)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -484,174 +605,731 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Member Contributions (${contributions.size})",
+                        text = "All Members (${WelfareViewModel.formatMonthDisplay(selectedMonth)})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    if (isAdminMode) {
-                        FilledTonalButton(
-                            onClick = onNavigateToMembers,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("manage_members_btn")
+                    Text(
+                        text = "$paidCount / $totalCount Paid",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            items(contributions, key = { it.member.id }) { item ->
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = item.member.name,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                            val rowAmt = item.amount ?: config.monthlyAmount
+                            val rowAmtStr = if (rowAmt > 0) "₹${rowAmt.toInt()}" else ""
+                            Text(
+                                text = if (item.isPaid) "Paid${if (rowAmtStr.isNotBlank()) " $rowAmtStr" else ""} via ${item.paymentMethod ?: "UPI"}" else if (rowAmtStr.isNotBlank()) "Due $rowAmtStr" else "Due",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    when {
+                                        item.isPaid -> EmeraldSuccessContainer
+                                        item.isCashPending -> MaterialTheme.colorScheme.secondaryContainer
+                                        else -> AmberPendingContainer
+                                    }
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("Manage Members", fontSize = 12.sp)
+                            Text(
+                                text = when {
+                                    item.isPaid -> "✅ Paid"
+                                    item.isCashPending -> "⏳ Verifying"
+                                    else -> "⏳ Pending"
+                                },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    item.isPaid -> EmeraldSuccess
+                                    item.isCashPending -> MaterialTheme.colorScheme.secondary
+                                    else -> AmberPending
+                                }
+                            )
                         }
                     }
                 }
             }
 
-            // Member Items for Selected Month
-            if (contributions.isEmpty()) {
+            // Bottom Ad in Member view
+            item {
+                AdBannerCard(
+                    campaignIndex = 0,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+
+        // =============================================================
+        // 3. ADMIN VIEW (When in Admin Mode)
+        // User request: "DASHBOARD to see members contribution and payment option monthly wise."
+        // =============================================================
+        if (isAdminMode) {
+            // Optional Setup Banner if monthly amount is not configured yet
+            if (config.monthlyAmount <= 0.0) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("setup_monthly_amount_card"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Set Monthly Contribution Amount",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "Configure default contribution amount for members (e.g. ₹500, ₹1000).",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(onClick = { showSetMonthlyAmountDialog = true }) {
+                                Text("Set Amount", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Admin Summary Overview
+            item {
+                val totalCollectedCalc = contributions.filter { it.isPaid }.sumOf { it.amount ?: config.monthlyAmount }
+                val totalPendingCalc = contributions.filter { !it.isPaid }.sumOf { it.amount ?: config.monthlyAmount }
+
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_summary_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Monthly Collection Summary",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("ADMIN VIEW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Total Collected", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("₹${totalCollectedCalc.toInt()}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = EmeraldSuccess)
+                            }
+                            Column {
+                                Text("Total Pending", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("₹${totalPendingCalc.toInt()}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = RoseOverdue)
+                            }
+                            Column {
+                                Text("Paid Status", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$paidCount / $totalCount", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { if (totalCount > 0) paidCount.toFloat() / totalCount else 0f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            // Sponsored Ad Banner right below Admin Summary
+            item {
+                AdBannerCard(
+                    campaignIndex = 0,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            // Cash Verification Alert (if any pending)
+            if (cashPendingList.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("cash_verification_alert_card"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = AmberPendingContainer.copy(alpha = 0.5f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = AmberPending, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "${cashPendingList.size} Cash Payments Pending Verification",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            cashPendingList.forEach { pendingItem ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(pendingItem.member.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        val claimAmt = pendingItem.amount ?: config.monthlyAmount
+                                        val claimAmtStr = if (claimAmt > 0) "₹${claimAmt.toInt()} " else ""
+                                        Text("${claimAmtStr}(Cash claim)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Button(
+                                            onClick = {
+                                                pendingItem.contributionId?.let { cid ->
+                                                    viewModel.verifyCashPayment(
+                                                        context = context,
+                                                        contributionId = cid,
+                                                        memberName = pendingItem.member.name,
+                                                        amount = pendingItem.amount ?: config.monthlyAmount,
+                                                        approved = true
+                                                    )
+                                                    Toast.makeText(context, "Approved cash payment for ${pendingItem.member.name}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Approve", fontSize = 11.sp)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                pendingItem.contributionId?.let { cid ->
+                                                    viewModel.verifyCashPayment(
+                                                        context = context,
+                                                        contributionId = cid,
+                                                        memberName = pendingItem.member.name,
+                                                        amount = pendingItem.amount ?: config.monthlyAmount,
+                                                        approved = false
+                                                    )
+                                                    Toast.makeText(context, "Rejected cash claim", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Reject", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Search Filter for Admin
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Members Contributions (${contributions.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    TextButton(onClick = onNavigateToMembers) {
+                        Text("+ Add Member", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = memberSearchFilter,
+                    onValueChange = { memberSearchFilter = it },
+                    placeholder = { Text("Search member by name...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (memberSearchFilter.isNotBlank()) {
+                            IconButton(onClick = { memberSearchFilter = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_search_member_input")
+                )
+            }
+
+            // List of members with Admin action
+            val filteredList = contributions.filter {
+                memberSearchFilter.isBlank() || it.member.name.contains(memberSearchFilter, ignoreCase = true)
+            }
+
+            if (filteredList.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("No members match the current filter")
+                            Text("No Members Found", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                text = if (contributions.isEmpty()) "Tap '+ Add Member' above to register members with their name." else "No members match '$memberSearchFilter'.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             } else {
-                items(contributions, key = { it.member.id }) { item ->
-                    MemberContributionCard(
-                        item = item,
-                        monthlyAmount = config.monthlyAmount,
-                        isAdminMode = isAdminMode,
-                        onPayClicked = {
-                            selectedItemForPayment = item
-                        },
-                        onQuickUpi = {
-                            UpiHelper.launchUpiPayment(
-                                context = context,
-                                upiId = config.upiId,
-                                name = config.upiName,
-                                amount = config.monthlyAmount,
-                                note = "MAYAN Welfare ${item.member.name} $selectedMonth"
-                            )
+                itemsIndexed(filteredList, key = { _, item -> item.member.id }) { index, item ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_member_row_${item.member.id}"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = item.member.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(
+                                            when {
+                                                item.isPaid -> EmeraldSuccessContainer
+                                                item.isCashPending -> MaterialTheme.colorScheme.secondaryContainer
+                                                else -> AmberPendingContainer
+                                            }
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = when {
+                                            item.isPaid -> "PAID"
+                                            item.isCashPending -> "VERIFY CASH"
+                                            else -> "PENDING"
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when {
+                                            item.isPaid -> EmeraldSuccess
+                                            item.isCashPending -> MaterialTheme.colorScheme.secondary
+                                            else -> AmberPending
+                                        }
+                                    )
+                                }
+                            }
+
+                            val itemAmount = item.amount ?: config.monthlyAmount
+                            val itemAmountStr = if (itemAmount > 0) "₹${itemAmount.toInt()}" else ""
+                            if (item.isPaid) {
+                                Text(
+                                    text = "${if (itemAmountStr.isNotBlank()) "$itemAmountStr • " else ""}${item.paymentMethod ?: "UPI"}",
+                                    fontSize = 12.sp,
+                                    color = EmeraldSuccess
+                                )
+                                if (!item.transactionRef.isNullOrBlank()) {
+                                    Text(
+                                        text = "Ref: ${item.transactionRef}",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = if (itemAmountStr.isNotBlank()) "Due: $itemAmountStr" else "Due",
+                                    fontSize = 12.sp,
+                                    color = RoseOverdue
+                                )
+                            }
                         }
-                    )
+
+                        // Admin Action Button
+                        if (!item.isPaid) {
+                            Button(
+                                onClick = { selectedItemForPayment = item },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("Record", fontSize = 12.sp)
+                            }
+                        } else {
+                            IconButton(onClick = { selectedItemForPayment = item }) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = "View Details", tint = EmeraldSuccess)
+                            }
+                        }
+                    }
+                }
+                    // In-feed ad unit after 3rd member and periodically in list
+                    if (index == 2 || (index > 2 && (index - 2) % 4 == 0)) {
+                        InFeedAdCard(
+                            campaignIndex = (index + 1) % 3,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
                 }
             }
+
+            // Bottom Ad in Admin view
+            item {
+                AdBannerCard(
+                    campaignIndex = 2,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(60.dp))
         }
     }
 
-    // QR & Direct UPI Payment Bottom Sheet
-    if (showQrBottomSheet) {
+    // -------------------------------------------------------------
+    // DIALOGS & SHEETS
+    // -------------------------------------------------------------
+
+    // 1. Member Selector Dialog
+    if (showMemberSelectorDialog) {
+        AlertDialog(
+            onDismissRequest = { showMemberSelectorDialog = false },
+            title = {
+                Text("Select Your Name (Member)", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Choose your name so this phone displays your personal contribution status and receives only your notifications:",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    LazyColumn(modifier = Modifier.height(280.dp)) {
+                        items(allMembers) { member ->
+                            val isSelected = currentMember?.id == member.id
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clickable {
+                                        viewModel.setDeviceMember(member)
+                                        showMemberSelectorDialog = false
+                                        Toast.makeText(context, "Active member set to ${member.name}", Toast.LENGTH_SHORT).show()
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = member.name,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMemberSelectorDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // 2. QR Code Dialog for Member Payment
+    if (showQrDialog) {
+        val parsedQrAmount = customQrAmount.toDoubleOrNull() ?: if (config.monthlyAmount > 0) config.monthlyAmount else 0.0
         val upiUri = UpiHelper.buildUpiUri(
             upiId = config.upiId,
             name = config.upiName,
-            amount = config.monthlyAmount,
-            note = "MAYAN Welfare Contribution $selectedMonth"
-        ).toString()
+            amount = parsedQrAmount,
+            note = "Welfare $selectedMonth - ${currentMember?.name ?: ""}"
+        )
 
-        ModalBottomSheet(
-            onDismissRequest = { showQrBottomSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-                    .testTag("upi_qr_bottom_sheet"),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+        AlertDialog(
+            onDismissRequest = { showQrDialog = false },
+            title = {
                 Text(
-                    text = "Pay Contribution via UPI",
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = if (parsedQrAmount > 0) "Scan to Pay ₹${parsedQrAmount.toInt()}" else "Scan & Pay via UPI",
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${config.fundTitle} • Month: ${WelfareViewModel.formatMonthDisplay(selectedMonth)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                QrCodeCanvas(
-                    content = upiUri,
-                    size = 190.dp
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Amount: ₹${config.monthlyAmount.toInt()}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.clickable {
-                        UpiHelper.copyToClipboard(context, config.upiId, "UPI ID")
-                    }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        modifier = Modifier.padding(4.dp)
                     ) {
+                        Box(modifier = Modifier.padding(12.dp)) {
+                            QrCodeCanvas(content = upiUri.toString(), size = 170.dp)
+                        }
+                    }
+
+                    if (config.upiId.isNotBlank()) {
                         Text(
-                            text = "UPI: ${config.upiId}",
-                            fontWeight = FontWeight.Medium,
+                            text = "UPI ID: ${config.upiId}",
+                            fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy UPI ID",
-                            modifier = Modifier.size(16.dp)
+
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(config.upiId))
+                                Toast.makeText(context, "UPI ID copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Copy UPI ID")
+                        }
+                    } else {
+                        Text(
+                            text = "UPI ID not yet configured. Admin can set it in Settings.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    CompactAdBanner(
+                        campaignIndex = 2,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Button(
-                    onClick = {
-                        UpiHelper.launchUpiPayment(
-                            context = context,
-                            upiId = config.upiId,
-                            name = config.upiName,
-                            amount = config.monthlyAmount,
-                            note = "MAYAN Welfare Contribution $selectedMonth"
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("open_upi_apps_btn")
-                ) {
-                    Icon(imageVector = Icons.Default.Payments, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Pay ₹${config.monthlyAmount.toInt()} with UPI Apps")
+            },
+            confirmButton = {
+                Button(onClick = { showQrDialog = false }) {
+                    Text("Done")
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedButton(
-                    onClick = { showQrBottomSheet = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Close")
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
             }
-        }
+        )
     }
 
-    // Record Payment Dialog
+    // 3. Member Cash Payment Claim Dialog
+    if (showCashDialogForMember) {
+        AlertDialog(
+            onDismissRequest = { showCashDialogForMember = false },
+            title = {
+                Text("Submit Cash Contribution", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter the amount handed over to Admin for $selectedMonth:",
+                        fontSize = 13.sp
+                    )
+                    OutlinedTextField(
+                        value = customCashAmount,
+                        onValueChange = { customCashAmount = it },
+                        label = { Text("Amount Paid (₹)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = cashNote,
+                        onValueChange = { cashNote = it },
+                        label = { Text("Note to Admin (Optional)") },
+                        placeholder = { Text("e.g. Paid in cash directly to admin") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    CompactAdBanner(
+                        campaignIndex = 1,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val member = currentMember
+                        val enteredAmount = customCashAmount.toDoubleOrNull() ?: config.monthlyAmount
+                        if (member != null) {
+                            viewModel.submitCashPayment(
+                                memberId = member.id,
+                                amount = enteredAmount,
+                                note = cashNote.trim()
+                            )
+                            showCashDialogForMember = false
+                            cashNote = ""
+                            Toast.makeText(context, "Cash contribution of ₹${enteredAmount.toInt()} submitted for Admin verification!", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                ) {
+                    Text("Submit for Verification")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showCashDialogForMember = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Dialog for Admin to set monthly amount directly from dashboard
+    if (showSetMonthlyAmountDialog) {
+        AlertDialog(
+            onDismissRequest = { showSetMonthlyAmountDialog = false },
+            title = {
+                Text("Set Monthly Contribution Amount", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter the standard monthly contribution per member for the fund:",
+                        fontSize = 13.sp
+                    )
+                    OutlinedTextField(
+                        value = newMonthlyAmountInput,
+                        onValueChange = { newMonthlyAmountInput = it },
+                        label = { Text("Monthly Amount (₹)") },
+                        placeholder = { Text("e.g. 500, 1000") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    CompactAdBanner(
+                        campaignIndex = 0,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amt = newMonthlyAmountInput.toDoubleOrNull() ?: 0.0
+                        viewModel.updateConfig(config.copy(monthlyAmount = amt))
+                        showSetMonthlyAmountDialog = false
+                        Toast.makeText(context, "Monthly contribution set to ₹${amt.toInt()}", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Save Amount")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showSetMonthlyAmountDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // 4. Record Payment Dialog (Admin recording payment)
     selectedItemForPayment?.let { item ->
         RecordPaymentDialog(
             item = item,
@@ -661,1229 +1339,19 @@ fun DashboardScreen(
             onDismiss = { selectedItemForPayment = null },
             onSubmitUpi = { memberId, amount, utr ->
                 viewModel.recordUpiPayment(memberId, amount, utr)
-                Toast.makeText(context, "UPI Payment recorded!", Toast.LENGTH_SHORT).show()
+                selectedItemForPayment = null
+                Toast.makeText(context, "Payment recorded for ${item.member.name}!", Toast.LENGTH_SHORT).show()
             },
             onSubmitCash = { memberId, amount, note ->
                 viewModel.submitCashPayment(memberId, amount, note)
-                Toast.makeText(context, "Cash payment submitted for Admin verification!", Toast.LENGTH_SHORT).show()
+                selectedItemForPayment = null
+                Toast.makeText(context, "Cash payment claim submitted!", Toast.LENGTH_SHORT).show()
             },
             onAdminDirectRecord = { memberId, amount, method, ref, remarks ->
                 viewModel.adminDirectRecord(memberId, amount, method, ref, remarks)
-                Toast.makeText(context, "Payment verified & saved by Admin!", Toast.LENGTH_SHORT).show()
+                selectedItemForPayment = null
+                Toast.makeText(context, "Contribution confirmed for ${item.member.name}!", Toast.LENGTH_SHORT).show()
             }
         )
     }
 }
-
-@Composable
-private fun OverallSummaryBanner(
-    totalCollected: Double,
-    totalPending: Double,
-    onSwitchToOverall: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onSwitchToOverall() },
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF0F172A),
-        shadowElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Assessment,
-                    contentDescription = null,
-                    tint = Color(0xFF38BDF8),
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "Overall All-Time Summary",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Row {
-                        Text(
-                            text = "Collected: ₹${totalCollected.toInt()}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF34D399)
-                        )
-                        Text(
-                            text = " • ",
-                            fontSize = 11.sp,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Text(
-                            text = "Pending: ₹${totalPending.toInt()}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF87171)
-                        )
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF1E293B))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "View All-Time",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun OverallFinancialOverviewCard(
-    overallSummary: OverallSummary,
-    config: AppConfig,
-    onShareReport: () -> Unit,
-    onQuickPay: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F172A)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF2563EB)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Assessment,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Overall Financial Summary",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "All-Time Group Welfare Fund",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8)
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E293B))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Text(
-                        text = "${overallSummary.trackedMonths.size} Months",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Two big stat cards: Total Collected vs Total Pending
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // OVERALL COLLECTED
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "OVERALL COLLECTED",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFA7F3D0)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "₹${overallSummary.totalCollected.toInt()}",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${overallSummary.totalPaidTransactions} payments verified",
-                            fontSize = 11.sp,
-                            color = Color(0xFF6EE7B7)
-                        )
-                    }
-                }
-
-                // OVERALL PENDING
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF450A0A))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.HourglassTop,
-                                contentDescription = null,
-                                tint = Color(0xFFF87171),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "OVERALL PENDING",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFECDD3)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "₹${overallSummary.totalPending.toInt()}",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFFFEE2E2)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${overallSummary.totalPendingInstances} pending dues",
-                            fontSize = 11.sp,
-                            color = Color(0xFFFCA5A5)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Lifetime Target & Progress
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Lifetime Progress",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8)
-                    )
-                    Text(
-                        text = "${overallSummary.collectionRate.toInt()}% of ₹${overallSummary.totalExpected.toInt()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                LinearProgressIndicator(
-                    progress = { (overallSummary.collectionRate / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(5.dp)),
-                    color = Color(0xFF10B981),
-                    trackColor = Color(0xFF334155),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Breakdown Pills
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Payments,
-                            contentDescription = null,
-                            tint = Color(0xFF60A5FA),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "UPI: ₹${overallSummary.upiCollected.toInt()}",
-                            fontSize = 11.sp,
-                            color = Color(0xFFE2E8F0),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Money,
-                            contentDescription = null,
-                            tint = Color(0xFF34D399),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Cash: ₹${overallSummary.cashCollected.toInt()}",
-                            fontSize = 11.sp,
-                            color = Color(0xFFE2E8F0),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onShareReport,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2563EB),
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share Overall", fontSize = 13.sp)
-                }
-
-                OutlinedButton(
-                    onClick = onQuickPay,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFF475569)),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCode,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Pay UPI QR", fontSize = 13.sp)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MemberOverallSummaryCard(
-    summary: MemberOverallSummary,
-    monthlyAmount: Double,
-    onPay: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (summary.totalPending == 0.0) EmeraldSuccess.copy(alpha = 0.2f)
-                                else MaterialTheme.colorScheme.primaryContainer
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = summary.member.name.take(1).uppercase(),
-                            fontWeight = FontWeight.Bold,
-                            color = if (summary.totalPending == 0.0) EmeraldSuccess else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = summary.member.name,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            if (summary.member.isAdmin) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "Admin",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
-                        Text(
-                            text = summary.member.phone,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                if (summary.totalPending == 0.0) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(EmeraldSuccessContainer)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "100% Cleared",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldOnSuccessContainer
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(RoseOverdueContainer)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "₹${summary.totalPending.toInt()} Due",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = RoseOnOverdueContainer
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Collected vs Pending numbers
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Total Contributed",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "₹${summary.totalContributed.toInt()}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = EmeraldSuccess
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Months Cleared",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${summary.monthsPaid} / ${summary.totalMonthsTracked}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Pending Dues",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "₹${summary.totalPending.toInt()}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (summary.totalPending > 0) RoseOverdue else EmeraldSuccess
-                    )
-                }
-            }
-
-            if (summary.totalPending > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    FilledTonalButton(
-                        onClick = onPay,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Pay Dues (₹${summary.totalPending.toInt()})", fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MonthSummaryRowCard(
-    monthItem: MonthSummaryItem,
-    onViewMonth: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = monthItem.monthDisplay,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "${monthItem.collectionRate.toInt()}% Collected",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { (monthItem.collectionRate / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = EmeraldSuccess,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Collected: ₹${monthItem.totalCollected.toInt()}",
-                        fontSize = 12.sp,
-                        color = EmeraldSuccess,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "Pending: ₹${monthItem.totalPending.toInt()}",
-                        fontSize = 12.sp,
-                        color = RoseOverdue,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                TextButton(
-                    onClick = onViewMonth,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text("View Month", fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(12.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MonthSelectorCard(
-    currentMonth: String,
-    availableMonths: List<String>,
-    onMonthSelected: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val currentIndex = availableMonths.indexOf(currentMonth)
-            val hasPrevious = currentIndex < availableMonths.size - 1
-            val hasNext = currentIndex > 0
-
-            IconButton(
-                onClick = {
-                    if (hasPrevious) onMonthSelected(availableMonths[currentIndex + 1])
-                },
-                enabled = hasPrevious
-            ) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Month")
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = WelfareViewModel.formatMonthDisplay(currentMonth),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Contribution Period",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    if (hasNext) onMonthSelected(availableMonths[currentIndex - 1])
-                },
-                enabled = hasNext
-            ) {
-                Icon(Icons.Default.ChevronRight, contentDescription = "Next Month")
-            }
-        }
-    }
-}
-
-@Composable
-private fun FinancialOverviewCard(
-    monthName: String,
-    totalCollected: Double,
-    totalPending: Double,
-    targetAmount: Double,
-    progressPercent: Float,
-    paidCount: Int,
-    totalCount: Int
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1E3A8A)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "$monthName Fund Status",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFFDBEAFE),
-                    fontWeight = FontWeight.SemiBold
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color(0xFF3B82F6).copy(alpha = 0.4f))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = "$paidCount / $totalCount Paid",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column {
-                    Text(
-                        text = "Total Collected",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF93C5FD)
-                    )
-                    Text(
-                        text = "₹${totalCollected.toInt()}",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Pending Dues",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFFCA5A5)
-                    )
-                    Text(
-                        text = "₹${totalPending.toInt()}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFECACA)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            LinearProgressIndicator(
-                progress = { progressPercent.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = Color(0xFF10B981),
-                trackColor = Color(0xFF334155),
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "${(progressPercent * 100).toInt()}% Target Reached",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFDBEAFE)
-                )
-                Text(
-                    text = "Goal: ₹${targetAmount.toInt()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFDBEAFE)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickActionBanner(
-    isAdminMode: Boolean,
-    config: AppConfig,
-    selectedMonth: String,
-    cashPendingCount: Int,
-    onShowQr: () -> Unit,
-    onSendReminders: () -> Unit,
-    onViewCashApprovals: () -> Unit
-) {
-    if (isAdminMode) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-            ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Admin Management Console",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onSendReminders,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("broadcast_reminders_btn"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.NotificationsActive,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Notify Dues", fontSize = 12.sp)
-                    }
-
-                    FilledTonalButton(
-                        onClick = onViewCashApprovals,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("admin_cash_approvals_btn"),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VerifiedUser,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            if (cashPendingCount > 0) "Verify ($cashPendingCount)" else "Verify Cash",
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        }
-    } else {
-        // General Member Quick Pay
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-            ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Payments,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Pay Monthly ₹${config.monthlyAmount.toInt()}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        text = "Instant UPI to ${config.upiId}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
-
-                Button(
-                    onClick = onShowQr,
-                    modifier = Modifier.testTag("quick_pay_upi_btn"),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCode,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Pay Now", fontSize = 12.sp)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterAndSearchSection(
-    searchQuery: String,
-    onSearchChange: (String) -> Unit,
-    statusFilter: String,
-    onFilterChange: (String) -> Unit,
-    paidCount: Int,
-    pendingCount: Int,
-    cashPendingCount: Int
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchChange,
-            placeholder = { Text("Search by member name or phone...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotBlank()) {
-                    IconButton(onClick = { onSearchChange("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search")
-                    }
-                }
-            },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("member_search_input"),
-            shape = RoundedCornerShape(12.dp)
-        )
-
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 2.dp)
-        ) {
-            item {
-                FilterChip(
-                    selected = statusFilter == "ALL",
-                    onClick = { onFilterChange("ALL") },
-                    label = { Text("All") },
-                    modifier = Modifier.testTag("filter_all")
-                )
-            }
-            item {
-                FilterChip(
-                    selected = statusFilter == "PAID",
-                    onClick = { onFilterChange("PAID") },
-                    label = { Text("Paid ($paidCount)") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = EmeraldSuccessContainer,
-                        selectedLabelColor = EmeraldOnSuccessContainer
-                    ),
-                    modifier = Modifier.testTag("filter_paid")
-                )
-            }
-            item {
-                FilterChip(
-                    selected = statusFilter == "PENDING",
-                    onClick = { onFilterChange("PENDING") },
-                    label = { Text("Pending ($pendingCount)") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = RoseOverdueContainer,
-                        selectedLabelColor = RoseOnOverdueContainer
-                    ),
-                    modifier = Modifier.testTag("filter_pending")
-                )
-            }
-            if (cashPendingCount > 0) {
-                item {
-                    FilterChip(
-                        selected = statusFilter == "CASH_PENDING",
-                        onClick = { onFilterChange("CASH_PENDING") },
-                        label = { Text("Cash Review ($cashPendingCount)") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AmberPendingContainer,
-                            selectedLabelColor = AmberOnPendingContainer
-                        ),
-                        modifier = Modifier.testTag("filter_cash")
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MemberContributionCard(
-    item: MemberWithContribution,
-    monthlyAmount: Double,
-    isAdminMode: Boolean,
-    onPayClicked: () -> Unit,
-    onQuickUpi: () -> Unit
-) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("member_item_${item.member.id}"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Avatar with initials
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            item.isPaid -> EmeraldSuccess.copy(alpha = 0.15f)
-                            item.isCashPending -> AmberPending.copy(alpha = 0.15f)
-                            item.isOverdue -> RoseOverdue.copy(alpha = 0.15f)
-                            else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = item.member.name.take(2).uppercase(),
-                    fontWeight = FontWeight.Bold,
-                    color = when {
-                        item.isPaid -> EmeraldSuccess
-                        item.isCashPending -> AmberPending
-                        item.isOverdue -> RoseOverdue
-                        else -> MaterialTheme.colorScheme.primary
-                    },
-                    fontSize = 15.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Details
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.member.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (item.member.role == "ADMIN") {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = "ADMIN",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = item.member.phone,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (item.transactionRef?.isNotBlank() == true) {
-                    Text(
-                        text = "Ref: ${item.transactionRef}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            // Status Badge & Action
-            Column(horizontalAlignment = Alignment.End) {
-                StatusBadge(
-                    status = item.displayStatus,
-                    verifiedByAdmin = item.verifiedByAdmin
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                if (item.isPaid) {
-                    Text(
-                        text = "₹${(item.amount ?: monthlyAmount).toInt()}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = EmeraldSuccess
-                    )
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OutlinedButton(
-                            onClick = onPayClicked,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Text(if (isAdminMode) "Record" else "Pay", fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StatusBadge(
-    status: String,
-    verifiedByAdmin: Boolean
-) {
-    val (bgColor, textColor, label, icon) = when (status) {
-        Contribution.STATUS_PAID -> Quad(
-            EmeraldSuccessContainer,
-            EmeraldOnSuccessContainer,
-            if (verifiedByAdmin) "Paid • Verified" else "Paid",
-            Icons.Default.CheckCircle
-        )
-        Contribution.STATUS_CASH_PENDING -> Quad(
-            AmberPendingContainer,
-            AmberOnPendingContainer,
-            "Cash Awaiting Approval",
-            Icons.Default.HourglassTop
-        )
-        Contribution.STATUS_OVERDUE -> Quad(
-            RoseOverdueContainer,
-            RoseOnOverdueContainer,
-            "Overdue",
-            Icons.Default.Warning
-        )
-        else -> Quad(
-            Color(0xFFF1F5F9),
-            Color(0xFF475569),
-            "Pending Due",
-            Icons.Default.HourglassTop
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(bgColor)
-            .padding(horizontal = 6.dp, vertical = 3.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(12.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = textColor
-            )
-        }
-    }
-}
-
-private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)

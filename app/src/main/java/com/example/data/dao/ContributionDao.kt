@@ -105,4 +105,10 @@ interface ContributionDao {
 
     @Query("DELETE FROM contributions WHERE id = :id")
     suspend fun deleteContributionById(id: Long)
+
+    @Query("DELETE FROM contributions WHERE memberId = :memberId")
+    suspend fun deleteContributionsForMember(memberId: Long)
+
+    @Query("DELETE FROM contributions")
+    suspend fun deleteAllContributions()
 }

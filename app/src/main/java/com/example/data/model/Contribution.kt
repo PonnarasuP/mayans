@@ -17,7 +17,7 @@ data class Contribution(
     val id: Long = 0,
     val memberId: Long,
     val monthYear: String, // e.g. "2026-09"
-    val amount: Double = 500.0,
+    val amount: Double = 0.0,
     val status: String = STATUS_PENDING, // PAID, PENDING, CASH_PENDING_VERIFICATION, OVERDUE
     val paymentMethod: String = METHOD_NONE, // UPI, CASH, NONE
     val transactionRef: String = "", // UPI UTR or receipt reference

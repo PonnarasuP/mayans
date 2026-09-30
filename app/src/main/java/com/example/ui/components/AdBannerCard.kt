@@ -326,3 +326,106 @@ fun AdBannerCard(
         }
     }
 }
+
+/**
+ * CompactAdBanner is optimized for bottom navigation docking or compact list headers.
+ * Max height ~56dp to minimize layout shifting while serving impressions.
+ */
+@Composable
+fun CompactAdBanner(
+    campaignIndex: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var isAdLoaded by remember { mutableStateOf(false) }
+    val campaign = SampleAdCampaigns[campaignIndex % SampleAdCampaigns.size]
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("compact_ad_banner_$campaignIndex"),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFFE2E8F0))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "AD",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF475569)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = campaign.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Sponsored by ${campaign.sponsorName}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    Toast.makeText(context, "Opening ${campaign.sponsorName}...", Toast.LENGTH_SHORT).show()
+                },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.height(30.dp)
+            ) {
+                Text(
+                    text = campaign.actionText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+/**
+ * InFeedAdCard displays an ad designed specifically to integrate naturally inside a LazyColumn
+ * among member lists, contribution lists, or activity feeds.
+ */
+@Composable
+fun InFeedAdCard(
+    campaignIndex: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    AdBannerCard(
+        campaignIndex = campaignIndex,
+        modifier = modifier.padding(vertical = 4.dp)
+    )
+}
+

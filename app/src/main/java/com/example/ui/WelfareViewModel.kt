@@ -45,7 +45,31 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         syncManager.startRealtimeSync(viewModelScope)
+        viewModelScope.launch {
+            val cfg = repository.getConfigSync()
+            var updatedCfg = cfg
+            if (cfg.adminPin == "1234") {
+                updatedCfg = updatedCfg.copy(adminPin = "170588")
+            }
+            if (cfg.adminName == "Arthi") {
+                updatedCfg = updatedCfg.copy(adminName = "Admin")
+            }
+            if (cfg.adminEmail == "arthi.eaglenewz@gmail.com") {
+                updatedCfg = updatedCfg.copy(adminEmail = "")
+            }
+            if (cfg.contactPhone == "+91 98401 23456" || cfg.contactPhone == "+91 98765 43210") {
+                updatedCfg = updatedCfg.copy(contactPhone = "")
+            }
+            if (cfg.upiId == "mayanwelfare@okhdfcbank") {
+                updatedCfg = updatedCfg.copy(upiId = "")
+            }
+            if (updatedCfg != cfg) {
+                repository.updateConfig(updatedCfg)
+            }
+            repository.clearHardcodedDemoData()
+        }
     }
+
 
     fun syncAllToCloud(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
@@ -67,7 +91,7 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
     private val _isAdminMode = MutableStateFlow(false)
     val isAdminMode: StateFlow<Boolean> = _isAdminMode.asStateFlow()
 
-    private val _selectedMemberId = MutableStateFlow<Long?>(2L) // Default to Aarthi Sundaram
+    private val _selectedMemberId = MutableStateFlow<Long?>(null)
     val selectedMemberId: StateFlow<Long?> = _selectedMemberId.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -93,6 +117,24 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    private val _currentDeviceMemberId = MutableStateFlow<Long?>(
+        NotificationHelper.getDeviceMemberId(application)
+    )
+    val currentDeviceMemberId: StateFlow<Long?> = _currentDeviceMemberId.asStateFlow()
+
+    val currentDeviceMember: StateFlow<Member?> = combine(allMembers, _currentDeviceMemberId) { members, id ->
+        if (id != null) {
+            members.find { it.id == id } ?: members.firstOrNull()
+        } else {
+            members.firstOrNull()
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun setDeviceMember(member: Member) {
+        NotificationHelper.setDeviceMember(getApplication(), member.id, member.name)
+        _currentDeviceMemberId.value = member.id
+    }
 
     val auditLogs: StateFlow<List<AuditLog>> = repository.auditLogs
         .stateIn(
@@ -240,7 +282,41 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
             initialValue = emptyList()
         )
 
+    val memberMonthlyContribution: StateFlow<MemberWithContribution?> =
+        combine(rawMonthlyContributions, currentDeviceMember) { list, member ->
+            if (member != null) {
+                list.find { it.member.id == member.id }
+            } else {
+                null
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val memberOverallSummary: StateFlow<MemberOverallSummary?> =
+        combine(overallSummary, currentDeviceMember) { summary, member ->
+            if (member != null) {
+                summary.memberSummaries.find { it.member.id == member.id }
+            } else {
+                null
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val availableMonths: List<String> = generateAvailableMonths()
+
+    val memberPendingMonths: StateFlow<List<String>> = combine(
+        currentDeviceMember,
+        repository.allContributions
+    ) { member, allContribs ->
+        if (member == null) {
+            emptyList()
+        } else {
+            val paidMonths = allContribs
+                .filter { it.memberId == member.id && it.status == Contribution.STATUS_PAID }
+                .map { it.monthYear }
+                .toSet()
+            // Tracked months that are unpaid
+            availableMonths.filter { m -> !paidMonths.contains(m) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun selectMonth(monthYear: String) {
         _selectedMonthYear.value = monthYear
@@ -363,6 +439,13 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun clearAllMembers() {
+        if (!_isAdminMode.value) return
+        viewModelScope.launch {
+            repository.clearAllMembers()
+        }
+    }
+
     fun updateConfig(config: AppConfig) {
         if (!_isAdminMode.value) return
         viewModelScope.launch {
@@ -370,31 +453,73 @@ class WelfareViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun sendMissedReminderNotifications(context: Context): Int {
-        if (!_isAdminMode.value) return 0
+    fun sendMissedReminderNotifications(context: Context): List<String> {
+        if (!_isAdminMode.value) return emptyList()
         val currentList = rawMonthlyContributions.value
         val pendingOrOverdue = currentList.filter {
             it.displayStatus == Contribution.STATUS_PENDING || it.isOverdue
         }
         val monthYear = _selectedMonthYear.value
+        val notifiedNames = mutableListOf<String>()
 
-        var count = 0
         for ((index, item) in pendingOrOverdue.withIndex()) {
+            val member = item.member
+            val reminderAmount = item.amount ?: appConfig.value.monthlyAmount
+            notifiedNames.add(member.name)
+
+            // 1. Broadcast to Central Cloud Firestore so other member phones receive it
+            viewModelScope.launch {
+                syncManager.pushPaymentReminder(
+                    memberId = member.id,
+                    memberName = member.name,
+                    monthYear = monthYear,
+                    amount = reminderAmount
+                )
+            }
+
+            // 2. Deliver on this phone ONLY if this device belongs to this specific member
             NotificationHelper.sendContributionReminderNotification(
                 context = context,
-                memberName = item.member.name,
+                memberName = member.name,
                 monthYear = monthYear,
-                amount = appConfig.value.monthlyAmount,
+                amount = reminderAmount,
+                targetMemberId = member.id,
                 notificationId = NotificationHelper.NOTIFICATION_ID_BASE + index
             )
-            count++
         }
 
         viewModelScope.launch {
             repository.markMissedContributionsOverdue(monthYear)
-            repository.logNotificationBroadcast(count, monthYear)
+            repository.logNotificationBroadcast(notifiedNames.size, monthYear)
         }
-        return count
+        return notifiedNames
+    }
+
+    fun sendSingleMemberReminder(
+        context: Context,
+        memberId: Long,
+        memberName: String,
+        monthYear: String,
+        amount: Double
+    ) {
+        if (!_isAdminMode.value) return
+        viewModelScope.launch {
+            syncManager.pushPaymentReminder(
+                memberId = memberId,
+                memberName = memberName,
+                monthYear = monthYear,
+                amount = amount
+            )
+        }
+        NotificationHelper.sendContributionReminderNotification(
+            context = context,
+            memberName = memberName,
+            monthYear = monthYear,
+            amount = amount,
+            targetMemberId = memberId,
+            notificationId = NotificationHelper.NOTIFICATION_ID_BASE + (memberId.toInt() % 100),
+            forceShow = false
+        )
     }
 
     fun buildAuditLogsExportText(): String {

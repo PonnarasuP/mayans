@@ -7,14 +7,15 @@ import androidx.room.PrimaryKey
 data class AppConfig(
     @PrimaryKey
     val id: Int = 1,
-    val upiId: String = "mayanwelfare@okhdfcbank",
-    val upiName: String = "MAYAN's Well Fare",
-    val monthlyAmount: Double = 500.0,
-    val adminPin: String = "1234",
-    val fundTitle: String = "MAYAN's Well Fare",
-    val contactPhone: String = "+91 98765 43210",
+    val upiId: String = "",
+    val upiName: String = "Welfare Fund",
+    val monthlyAmount: Double = 0.0,
+    val adminPin: String = "170588",
+    val fundTitle: String = "Welfare Fund",
+    val contactPhone: String = "",
     val reminderDayOfMonth: Int = 1,
     val autoNotifyMissed: Boolean = true,
-    val adminName: String = "Arthi",
-    val adminEmail: String = "arthi.eaglenewz@gmail.com"
+    val adminName: String = "Admin",
+    val adminEmail: String = ""
 )
+

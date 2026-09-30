@@ -87,17 +87,17 @@ fun AdminPinDialog(
                         }
                     },
                     label = { Text("Admin PIN") },
-                    placeholder = { Text("Default: 1234") },
+                    placeholder = { Text("••••••") },
                     singleLine = true,
                     isError = showError,
                     supportingText = {
                         if (showError) {
                             Text(
-                                "Incorrect PIN. Default PIN is 1234.",
+                                "Incorrect PIN. Please try again.",
                                 color = MaterialTheme.colorScheme.error
                             )
                         } else {
-                            Text("Default initial PIN is 1234")
+                            Text("Enter your 6-digit security PIN")
                         }
                     },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),

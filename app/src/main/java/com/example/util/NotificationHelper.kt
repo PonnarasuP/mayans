@@ -45,13 +45,67 @@ object NotificationHelper {
         }
     }
 
+    private const val PREFS_NAME = "welfare_prefs"
+    private const val KEY_DEVICE_MEMBER_ID = "device_member_id"
+    private const val KEY_DEVICE_MEMBER_NAME = "device_member_name"
+
+    fun setDeviceMember(context: Context, memberId: Long, memberName: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putLong(KEY_DEVICE_MEMBER_ID, memberId)
+            .putString(KEY_DEVICE_MEMBER_NAME, memberName)
+            .apply()
+    }
+
+    fun getDeviceMemberId(context: Context): Long? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val id = prefs.getLong(KEY_DEVICE_MEMBER_ID, -1L)
+        return if (id != -1L) id else null
+    }
+
+    fun getDeviceMemberName(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_DEVICE_MEMBER_NAME, null)
+    }
+
+    /**
+     * Ensures that members only receive their OWN notification and never see others' notifications on their phone.
+     */
+    fun shouldShowNotificationForMember(
+        context: Context,
+        targetMemberId: Long?,
+        targetMemberName: String?
+    ): Boolean {
+        val deviceId = getDeviceMemberId(context)
+        val deviceName = getDeviceMemberName(context)
+
+        // If device has a configured member identity, strictly match
+        if (deviceId != null && targetMemberId != null) {
+            return deviceId == targetMemberId
+        }
+        if (!deviceName.isNullOrBlank() && !targetMemberName.isNullOrBlank()) {
+            return deviceName.equals(targetMemberName, ignoreCase = true)
+        }
+        // If device is not assigned to a specific member, do not leak others' notifications
+        return targetMemberId == null
+    }
+
     fun sendContributionReminderNotification(
         context: Context,
         memberName: String,
         monthYear: String,
         amount: Double,
-        notificationId: Int = NOTIFICATION_ID_BASE + 1
-    ) {
+        targetMemberId: Long? = null,
+        notificationId: Int = NOTIFICATION_ID_BASE + 1,
+        forceShow: Boolean = false
+    ): Boolean {
+        // Enforce strict privacy rule: member shall only receive their own notification
+        if (!forceShow && targetMemberId != null) {
+            if (!shouldShowNotificationForMember(context, targetMemberId, memberName)) {
+                return false
+            }
+        }
+
         createNotificationChannel(context)
 
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -80,8 +134,9 @@ object NotificationHelper {
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         try {
             notificationManager.notify(notificationId, builder.build())
+            return true
         } catch (_: SecurityException) {
-            // Handled gracefully if permission denied
+            return false
         }
     }
 

@@ -191,26 +191,30 @@ fun CashVerificationScreen(
                     item = item,
                     onApprove = {
                         val contribId = item.contributionId ?: return@CashVerificationCard
+                        val defaultAmount = viewModel.appConfig.value.monthlyAmount
+                        val finalAmount = item.amount ?: defaultAmount
                         viewModel.verifyCashPayment(
                             context = context,
                             contributionId = contribId,
                             memberName = item.member.name,
-                            amount = item.amount ?: 500.0,
+                            amount = finalAmount,
                             approved = true
                         )
                         Toast.makeText(
                             context,
-                            "Approved cash payment of ₹${(item.amount ?: 500.0).toInt()} from ${item.member.name}",
+                            "Approved cash payment of ₹${finalAmount.toInt()} from ${item.member.name}",
                             Toast.LENGTH_SHORT
                         ).show()
                     },
                     onReject = {
                         val contribId = item.contributionId ?: return@CashVerificationCard
+                        val defaultAmount = viewModel.appConfig.value.monthlyAmount
+                        val finalAmount = item.amount ?: defaultAmount
                         viewModel.verifyCashPayment(
                             context = context,
                             contributionId = contribId,
                             memberName = item.member.name,
-                            amount = item.amount ?: 500.0,
+                            amount = finalAmount,
                             approved = false
                         )
                         Toast.makeText(
@@ -265,7 +269,7 @@ private fun CashVerificationCard(
                 }
 
                 Text(
-                    text = "₹${(item.amount ?: 500.0).toInt()}",
+                    text = "₹${(item.amount ?: 0.0).toInt()}",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.ExtraBold,
                     color = EmeraldSuccess
